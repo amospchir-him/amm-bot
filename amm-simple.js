@@ -1,25 +1,6 @@
 // =======================================================
-// 🤖 AMM BOT – NO QR, GUARANTEED (with console filter)
+// 🤖 AMM BOT – FINAL WORKING VERSION (No QR)
 // =======================================================
-
-// ---- FILTER OUT QR CODES ----
-const originalLog = console.log;
-const originalError = console.error;
-console.log = function(...args) {
-    const msg = args.join(' ');
-    if (msg.includes('QR') || /[A-Za-z0-9+/=]{30,}/.test(msg)) {
-        return;
-    }
-    originalLog.apply(console, args);
-};
-console.error = function(...args) {
-    const msg = args.join(' ');
-    if (msg.includes('QR') || /[A-Za-z0-9+/=]{30,}/.test(msg)) {
-        return;
-    }
-    originalError.apply(console, args);
-};
-// -----------------------------
 
 const { 
     makeWASocket, 
@@ -53,6 +34,7 @@ app.listen(PORT, () => console.log(`🌐 Web panel: http://localhost:${PORT}`));
 
 let sock = null;
 let pairingRequested = false;
+let pairingRetry = 0;
 
 // ---------- AUTO-MODERATION SETTINGS ----------
 const SETTINGS_FILE = path.join(__dirname, 'automod_cache.json');
@@ -131,7 +113,6 @@ global.autoRead = {};
 global.autoReply = {};
 global.antiPm = {};
 
-// ---------- COMMAND HANDLER ----------
 async function handleCommand(cmd, sender, args, fullText, msg, isGroup) {
     if (isGroup) {
         const gs = getGroupSettings(sender);
@@ -308,18 +289,10 @@ async function startBot() {
         browser: Browsers.windows('Chrome'),
         markOnlineOnConnect: true,
         syncFullHistory: false,
-        printQRInTerminal: false,
-        logger: {
-            level: 'error',
-            log: () => {},
-            info: () => {},
-            warn: () => {},
-            error: console.error,
-            child: () => ({ log: () => {}, info: () => {}, warn: () => {}, error: console.error })
-        }
+        printQRInTerminal: false  // ← Disable QR
     });
 
-    let pairingRetry = 0;
+    // ---------- REQUEST PAIRING CODE ----------
     async function requestPairing() {
         if (pairingRequested || sock.authState.creds.registered) return;
         pairingRequested = true;
@@ -328,9 +301,8 @@ async function startBot() {
         console.log(`📞 Using number: ${number}`);
         try {
             const code = await sock.requestPairingCode(number);
-            // Use originalLog to ensure it's printed even if filter catches something
-            originalLog(`\n🔐 YOUR PAIRING CODE: ${code}\n`);
-            originalLog('Open WhatsApp → Settings → Linked Devices → Link with phone number → enter this code');
+            console.log(`\n🔐 YOUR PAIRING CODE: ${code}\n`);
+            console.log('Open WhatsApp → Settings → Linked Devices → Link with phone number → enter this code');
             pairingRetry = 0;
         } catch (err) {
             console.error('❌ Pairing request failed:', err.message);
@@ -339,12 +311,11 @@ async function startBot() {
             if (pairingRetry < 5) {
                 console.log(`Retrying in 10s... (attempt ${pairingRetry})`);
                 setTimeout(requestPairing, 10000);
-            } else {
-                console.log('⚠️ Too many failed attempts. Restart the service to retry.');
             }
         }
     }
 
+    // Wait 2 seconds and request pairing code
     setTimeout(requestPairing, 2000);
 
     sock.ev.on('connection.update', async (update) => {
@@ -369,6 +340,7 @@ async function startBot() {
 
     sock.ev.on('creds.update', saveCreds);
 
+    // ---------- MESSAGE HANDLER ----------
     sock.ev.on('messages.upsert', async (m) => {
         const msg = m.messages[0];
         if (!msg.message || msg.key.remoteJid === 'status@broadcast') return;
