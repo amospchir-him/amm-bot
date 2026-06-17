@@ -1,5 +1,5 @@
 // =======================================================
-// 🤖 AMM BOT – DEPLOYABLE (PAIRING CODE ONLY, NO QR)
+// 🤖 AMM BOT – CORRECTED (Instant Pairing Code, No QR)
 // =======================================================
 
 const { 
@@ -15,17 +15,16 @@ const moment = require('moment-timezone');
 const fs = require('fs');
 require('dotenv').config();
 
-// ---------- CONFIG (✏️ CHANGE THESE TWO NUMBERS) ----------
+// ---------- CONFIG (✏️ CHANGE THIS NUMBER) ----------
 const config = {
     BOT_NAME: 'AMM',
     PREFIX: '.',
-    OWNER_NUMBER: '254700000000',   // ← YOUR WhatsApp number (no +, no spaces)
+    OWNER_NUMBER: '254745873966',   // ← YOUR WhatsApp number (no +, no spaces)
     VERSION: '1.0.0',
     TIMEZONE: 'Africa/Nairobi'
 };
 
-// This is the number the bot will use for pairing (same as owner)
-const PAIRING_NUMBER = '254745873966'; // ← CHANGE to your WhatsApp number
+const PAIRING_NUMBER = '254745873966'; // ← SAME number
 
 // ---------- WEB PANEL ----------
 const app = express();
@@ -77,7 +76,6 @@ function getGroupSettings(groupId) {
     return autoModSettings[groupId];
 }
 
-// Spam tracker
 const userMsgCount = new Map();
 
 function checkSpam(groupId, userId, now, gs) {
@@ -110,14 +108,12 @@ function hasBadWord(text, badwords) {
     return badwords.some(w => lower.includes(w));
 }
 
-// ---------- GLOBAL STATES ----------
 global.autoRead = {};
 global.autoReply = {};
 global.antiPm = {};
 
 // ---------- COMMAND HANDLER ----------
 async function handleCommand(cmd, sender, args, fullText, msg, isGroup) {
-    // Auto-mod toggles (groups only)
     if (isGroup) {
         const gs = getGroupSettings(sender);
         const toggle = async (feature, displayName) => {
@@ -167,7 +163,6 @@ async function handleCommand(cmd, sender, args, fullText, msg, isGroup) {
         }
     }
 
-    // Regular commands
     switch (cmd) {
         case 'menu': {
             return `╭━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╮
@@ -237,7 +232,6 @@ async function handleCommand(cmd, sender, args, fullText, msg, isGroup) {
                 global.antiPm[sender] = true;
                 return '✅ Anti-PM ON';
             }
-        // Group management
         case 'kick':
             if (!isGroup) return '❌ Groups only.';
             const kickMention = msg.message.extendedTextMessage?.contextInfo?.mentionedJid;
@@ -295,27 +289,43 @@ async function startBot() {
         browser: Browsers.windows('Chrome'),
         markOnlineOnConnect: true,
         syncFullHistory: false,
-        printQRInTerminal: false   // 🔥 DISABLE QR CODE
+        printQRInTerminal: false
     });
 
+    // ----- REQUEST PAIRING CODE INSTANTLY -----
+    let pairingRetry = 0;
+    async function requestPairing() {
+        if (pairingRequested || sock.authState.creds.registered) return;
+        pairingRequested = true;
+        console.log('\n🔐 Requesting pairing code...\n');
+        const number = PAIRING_NUMBER;
+        console.log(`📞 Using number: ${number}`);
+        try {
+            const code = await sock.requestPairingCode(number);
+            console.log(`\n🔐 YOUR PAIRING CODE: ${code}\n`);
+            console.log('Open WhatsApp → Settings → Linked Devices → Link with phone number → enter this code');
+            pairingRetry = 0;
+        } catch (err) {
+            console.error('❌ Pairing request failed:', err.message);
+            pairingRequested = false;
+            pairingRetry++;
+            if (pairingRetry < 5) {
+                console.log(`Retrying in 10s... (attempt ${pairingRetry})`);
+                setTimeout(requestPairing, 10000);
+            } else {
+                console.log('⚠️ Too many failed attempts. Restart the service to retry.');
+            }
+        }
+    }
+
+    // Wait 2 seconds for socket to initialize, then request code
+    setTimeout(requestPairing, 2000);
+
+    // Also trigger when connection update occurs
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
-        // ❌ QR CODE REMOVED – we don't want it at all
-
-        if (connection === 'connecting' && !pairingRequested && !sock.authState.creds.registered) {
-            pairingRequested = true;
-            console.log('\n🔐 PAIRING CODE REQUIRED\n');
-            const number = PAIRING_NUMBER;
-            console.log(`📞 Using number: ${number}`);
-            try {
-                const code = await sock.requestPairingCode(number);
-                console.log(`\n🔐 YOUR PAIRING CODE: ${code}\n`);
-                console.log('Open WhatsApp → Linked Devices → Link with phone number → enter this code');
-            } catch (err) {
-                console.error('Pairing error:', err.message);
-                pairingRequested = false;
-                setTimeout(() => { pairingRequested = false; }, 10000);
-            }
+        if (!sock.authState.creds.registered && !pairingRequested) {
+            await requestPairing();
         }
         if (connection === 'open') {
             console.log(`\n✅ ${config.BOT_NAME} BOT ONLINE!\nSend "${config.PREFIX}menu" on WhatsApp\n`);
@@ -326,7 +336,9 @@ async function startBot() {
                 console.log(`Disconnected (${code}). Reconnecting in 5s...`);
                 pairingRequested = false;
                 setTimeout(startBot, 5000);
-            } else console.log('Logged out. Delete "sessions_amm" folder and restart.');
+            } else {
+                console.log('Logged out. Delete "sessions_amm" folder and restart.');
+            }
         }
     });
 
@@ -342,19 +354,16 @@ async function startBot() {
         if (!text) return;
         console.log(`📨 "${text}" from ${isGroup ? 'group' : 'private'}`);
 
-        // Anti-PM
         if (!isGroup && global.antiPm[sender] && !config.OWNER_NUMBER.includes(sender.split('@')[0])) {
             await sock.sendMessage(sender, { text: '🔒 Private messages not allowed.' });
             await sock.updateBlockStatus(sender, 'block');
             return;
         }
 
-        // Auto-read
         if (global.autoRead[sender]) {
             try { await sock.readMessages([msg.key]); } catch(e) {}
         }
 
-        // Auto-moderation (groups only)
         if (isGroup) {
             let msgType = 'text';
             if (msg.message.stickerMessage) msgType = 'sticker';
@@ -403,7 +412,6 @@ async function startBot() {
             }
         }
 
-        // Command handling
         if (!text.startsWith(config.PREFIX)) return;
 
         const full = text.slice(config.PREFIX.length).trim();
