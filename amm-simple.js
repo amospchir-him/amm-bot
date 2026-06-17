@@ -1,6 +1,39 @@
 // =======================================================
-// 🤖 AMM BOT – FINAL WORKING VERSION (No QR)
+// 🤖 AMM BOT – FULL FEATURES + NUCLEAR QR SUPPRESSOR
 // =======================================================
+
+// ========== SUPPRESS QR CODES (NUCLEAR) ==========
+const origLog = console.log;
+const origError = console.error;
+const origStdoutWrite = process.stdout.write.bind(process.stdout);
+const origStderrWrite = process.stderr.write.bind(process.stderr);
+
+console.log = function(...args) {
+    const msg = args.join(' ');
+    // Block any line containing a long random string (QR code pattern)
+    if (/[A-Za-z0-9+/=]{20,}/.test(msg)) return;
+    if (msg.includes('QR')) return;
+    origLog.apply(console, args);
+};
+console.error = function(...args) {
+    const msg = args.join(' ');
+    if (/[A-Za-z0-9+/=]{20,}/.test(msg)) return;
+    if (msg.includes('QR')) return;
+    origError.apply(console, args);
+};
+process.stdout.write = function(chunk, ...args) {
+    const msg = chunk.toString();
+    if (/[A-Za-z0-9+/=]{20,}/.test(msg)) return;
+    if (msg.includes('QR')) return;
+    return origStdoutWrite(chunk, ...args);
+};
+process.stderr.write = function(chunk, ...args) {
+    const msg = chunk.toString();
+    if (/[A-Za-z0-9+/=]{20,}/.test(msg)) return;
+    if (msg.includes('QR')) return;
+    return origStderrWrite(chunk, ...args);
+};
+// ====================================================
 
 const { 
     makeWASocket, 
@@ -34,7 +67,6 @@ app.listen(PORT, () => console.log(`🌐 Web panel: http://localhost:${PORT}`));
 
 let sock = null;
 let pairingRequested = false;
-let pairingRetry = 0;
 
 // ---------- AUTO-MODERATION SETTINGS ----------
 const SETTINGS_FILE = path.join(__dirname, 'automod_cache.json');
@@ -113,6 +145,7 @@ global.autoRead = {};
 global.autoReply = {};
 global.antiPm = {};
 
+// ---------- COMMAND HANDLER (full) ----------
 async function handleCommand(cmd, sender, args, fullText, msg, isGroup) {
     if (isGroup) {
         const gs = getGroupSettings(sender);
@@ -289,10 +322,20 @@ async function startBot() {
         browser: Browsers.windows('Chrome'),
         markOnlineOnConnect: true,
         syncFullHistory: false,
-        printQRInTerminal: false  // ← Disable QR
+        printQRInTerminal: false,   // disable QR
+        // silence logs
+        logger: {
+            level: 'error',
+            log: () => {},
+            info: () => {},
+            warn: () => {},
+            error: console.error,
+            child: () => ({ log: () => {}, info: () => {}, warn: () => {}, error: console.error })
+        }
     });
 
     // ---------- REQUEST PAIRING CODE ----------
+    let pairingRetry = 0;
     async function requestPairing() {
         if (pairingRequested || sock.authState.creds.registered) return;
         pairingRequested = true;
@@ -311,15 +354,18 @@ async function startBot() {
             if (pairingRetry < 5) {
                 console.log(`Retrying in 10s... (attempt ${pairingRetry})`);
                 setTimeout(requestPairing, 10000);
+            } else {
+                console.log('⚠️ Too many failed attempts. Restart the service to retry.');
             }
         }
     }
 
-    // Wait 2 seconds and request pairing code
+    // Wait 2 seconds for socket to initialize
     setTimeout(requestPairing, 2000);
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
+        // Ignore QR completely – we never print it
         if (!sock.authState.creds.registered && !pairingRequested) {
             await requestPairing();
         }
@@ -350,16 +396,19 @@ async function startBot() {
         if (!text) return;
         console.log(`📨 "${text}" from ${isGroup ? 'group' : 'private'}`);
 
+        // Anti-PM
         if (!isGroup && global.antiPm[sender] && !config.OWNER_NUMBER.includes(sender.split('@')[0])) {
             await sock.sendMessage(sender, { text: '🔒 Private messages not allowed.' });
             await sock.updateBlockStatus(sender, 'block');
             return;
         }
 
+        // Auto-read
         if (global.autoRead[sender]) {
             try { await sock.readMessages([msg.key]); } catch(e) {}
         }
 
+        // Auto-moderation (groups only)
         if (isGroup) {
             let msgType = 'text';
             if (msg.message.stickerMessage) msgType = 'sticker';
@@ -408,6 +457,7 @@ async function startBot() {
             }
         }
 
+        // Command handling
         if (!text.startsWith(config.PREFIX)) return;
 
         const full = text.slice(config.PREFIX.length).trim();
