@@ -1,5 +1,5 @@
 // =======================================================
-// 🤖 AMM BOT – FINAL WORKING VERSION (No YouTube)
+// 🤖 AMM BOT – DEPLOYABLE VERSION (No YouTube, Auto-Pair)
 // =======================================================
 
 const { 
@@ -17,14 +17,17 @@ const readline = require('readline');
 const fs = require('fs');
 require('dotenv').config();
 
-// ---------- CONFIG ----------
+// ---------- CONFIG (✏️ CHANGE THESE TWO NUMBERS) ----------
 const config = {
     BOT_NAME: 'AMM',
     PREFIX: '.',
-    OWNER_NUMBER: '254745873966',   // ← CHANGE to your number (no +, no spaces)
+    OWNER_NUMBER: '254745873966',   // ← YOUR WhatsApp number (no +, no spaces)
     VERSION: '1.0.0',
     TIMEZONE: 'Africa/Nairobi'
 };
+
+// This is the number the bot will use for pairing (same as owner, usually)
+const PAIRING_NUMBER = '254700000000'; // ← CHANGE to your WhatsApp number (no +, no spaces)
 
 // ---------- WEB PANEL ----------
 const app = express();
@@ -306,13 +309,18 @@ async function startBot() {
         if (connection === 'connecting' && !pairingRequested && !sock.authState.creds.registered) {
             pairingRequested = true;
             console.log('\n🔐 PAIRING CODE REQUIRED\n');
-            rl.question('📞 Enter your WhatsApp number (country code without +): ', async (number) => {
-                try {
-                    const code = await sock.requestPairingCode(number);
-                    console.log(`\n🔐 YOUR PAIRING CODE: ${code}\n`);
-                    console.log('Open WhatsApp → Linked Devices → Link with phone number → enter this code');
-                } catch (err) { console.error('Pairing error:', err.message); }
-            });
+            // 🔥 HARDCODED NUMBER – NO TERMINAL INPUT NEEDED!
+            const number = PAIRING_NUMBER;
+            console.log(`📞 Using number: ${number}`);
+            try {
+                const code = await sock.requestPairingCode(number);
+                console.log(`\n🔐 YOUR PAIRING CODE: ${code}\n`);
+                console.log('Open WhatsApp → Linked Devices → Link with phone number → enter this code');
+            } catch (err) {
+                console.error('Pairing error:', err.message);
+                pairingRequested = false; // allow retry
+                setTimeout(() => { pairingRequested = false; }, 10000);
+            }
         }
         if (connection === 'open') {
             console.log(`\n✅ ${config.BOT_NAME} BOT ONLINE!\nSend "${config.PREFIX}menu" on WhatsApp\n`);
