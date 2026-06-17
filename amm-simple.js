@@ -1,5 +1,5 @@
 // =======================================================
-// 🤖 AMM BOT – DEPLOYABLE VERSION (No YouTube, Auto-Pair)
+// 🤖 AMM BOT – DEPLOYABLE (PAIRING CODE ONLY, NO QR)
 // =======================================================
 
 const { 
@@ -12,8 +12,6 @@ const {
 const express = require('express');
 const path = require('path');
 const moment = require('moment-timezone');
-const qrcode = require('qrcode-terminal');
-const readline = require('readline');
 const fs = require('fs');
 require('dotenv').config();
 
@@ -21,13 +19,13 @@ require('dotenv').config();
 const config = {
     BOT_NAME: 'AMM',
     PREFIX: '.',
-    OWNER_NUMBER: '254745873966',   // ← YOUR WhatsApp number (no +, no spaces)
+    OWNER_NUMBER: '254700000000',   // ← YOUR WhatsApp number (no +, no spaces)
     VERSION: '1.0.0',
     TIMEZONE: 'Africa/Nairobi'
 };
 
-// This is the number the bot will use for pairing (same as owner, usually)
-const PAIRING_NUMBER = '254700000000'; // ← CHANGE to your WhatsApp number (no +, no spaces)
+// This is the number the bot will use for pairing (same as owner)
+const PAIRING_NUMBER = '254745873966'; // ← CHANGE to your WhatsApp number
 
 // ---------- WEB PANEL ----------
 const app = express();
@@ -35,7 +33,6 @@ const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send(`<h1>🤖 ${config.BOT_NAME}</h1><p>✅ Online</p>`));
 app.listen(PORT, () => console.log(`🌐 Web panel: http://localhost:${PORT}`));
 
-const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 let sock = null;
 let pairingRequested = false;
 
@@ -297,19 +294,17 @@ async function startBot() {
         auth: state,
         browser: Browsers.windows('Chrome'),
         markOnlineOnConnect: true,
-        syncFullHistory: false
+        syncFullHistory: false,
+        printQRInTerminal: false   // 🔥 DISABLE QR CODE
     });
 
     sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        if (qr && !pairingRequested && !sock.authState.creds.registered) {
-            console.log('⚠️ QR code (fallback) – scan if pairing fails');
-            qrcode.generate(qr, { small: true });
-        }
+        const { connection, lastDisconnect } = update;
+        // ❌ QR CODE REMOVED – we don't want it at all
+
         if (connection === 'connecting' && !pairingRequested && !sock.authState.creds.registered) {
             pairingRequested = true;
             console.log('\n🔐 PAIRING CODE REQUIRED\n');
-            // 🔥 HARDCODED NUMBER – NO TERMINAL INPUT NEEDED!
             const number = PAIRING_NUMBER;
             console.log(`📞 Using number: ${number}`);
             try {
@@ -318,18 +313,18 @@ async function startBot() {
                 console.log('Open WhatsApp → Linked Devices → Link with phone number → enter this code');
             } catch (err) {
                 console.error('Pairing error:', err.message);
-                pairingRequested = false; // allow retry
+                pairingRequested = false;
                 setTimeout(() => { pairingRequested = false; }, 10000);
             }
         }
         if (connection === 'open') {
             console.log(`\n✅ ${config.BOT_NAME} BOT ONLINE!\nSend "${config.PREFIX}menu" on WhatsApp\n`);
-            rl.close();
         }
         if (connection === 'close') {
             const code = lastDisconnect?.error?.output?.statusCode;
             if (code !== DisconnectReason.loggedOut) {
                 console.log(`Disconnected (${code}). Reconnecting in 5s...`);
+                pairingRequested = false;
                 setTimeout(startBot, 5000);
             } else console.log('Logged out. Delete "sessions_amm" folder and restart.');
         }
