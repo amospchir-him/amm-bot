@@ -27,14 +27,15 @@ const config = {
     PREFIX: '.',
 };
 
-const PAIRING_NUMBER = '254745873966'; // ← CHANGE to your number
+const PAIRING_NUMBER = '254724579779'; // ← CHANGE to your number
 
 // ---------- MAIN BOT ----------
 async function startBot() {
     console.log('\n🤖 Starting AMM Bot...\n');
 
     const { version } = await fetchLatestBaileysVersion();
-    console.log(`📱 WhatsApp version: ${version.join('.')}`);
+    console.log(`📱 WhatsApp version: ${v
+        ersion.join('.')}`);
 
     const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
 
