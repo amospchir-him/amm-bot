@@ -1,5 +1,4 @@
-// =======================================================
-// 🤖 AMM BOT – FULL FEATURES + SESSION RESET (NO QR)
+ BOT – FULL FEATURES + SESSION RESET (NO QR)
 // =======================================================
 
 const fs = require('fs');
